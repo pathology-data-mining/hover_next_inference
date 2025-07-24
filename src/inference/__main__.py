@@ -229,7 +229,7 @@ def main():
     parser.add_argument("--cache", type=str, default=None, help="cache path")
     params = vars(parser.parse_args())
 
-    infer(parmams)
+    infer(params)
 
 if __name__ == "__main__":
     main()
