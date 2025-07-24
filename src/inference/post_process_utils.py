@@ -9,9 +9,9 @@ import openslide
 from skimage.segmentation import watershed
 from scipy.ndimage import find_objects
 from numcodecs import Blosc
-from src.viz_utils import cont
+from inference.viz_utils import cont
 from skimage.measure import regionprops
-from src.constants import (
+from inference.constants import (
     MIN_THRESHS_LIZARD,
     MIN_THRESHS_PANNUKE,
     MAX_THRESHS_LIZARD,
@@ -20,7 +20,7 @@ from src.constants import (
     LUT_MAGNIFICATION_MPP,
     LUT_MAGNIFICATION_X,
 )
-from src.data_utils import center_crop, WholeSlideDataset, NpyDataset, ImageDataset
+from inference.data_utils import center_crop, WholeSlideDataset, NpyDataset, ImageDataset
 
 
 def update_dicts(pinst_, pcls_, pcls_out, t_, old_ids, initial_ids):
@@ -650,7 +650,7 @@ def get_shapes(params, nclasses):
         rel_res = np.isclose(dataset.mpp, LUT_MAGNIFICATION_MPP, rtol=0.2)
         if sum(rel_res) != 1:
             raise NotImplementedError(
-                "Currently no support for images with this resolution. Check src.constants in LUT_MAGNIFICATION_MPP and LUT_MAGNIFICATION_X to add the resultion - downsampling pair"
+                "Currently no support for images with this resolution. Check inference.constants in LUT_MAGNIFICATION_MPP and LUT_MAGNIFICATION_X to add the resultion - downsampling pair"
             )
         else:
             ds_factor = LUT_MAGNIFICATION_X[rel_res.argmax()] / level

@@ -1,12 +1,12 @@
-from src.post_process_utils import (
+from inference.post_process_utils import (
     work,
     write,
     get_pp_params,
     get_shapes,
     get_tile_coords,
 )
-from src.viz_utils import create_tsvs, create_polygon_output
-from src.data_utils import NpyDataset, ImageDataset
+from inference.viz_utils import create_tsvs, create_polygon_output
+from inference.data_utils import NpyDataset, ImageDataset
 from typing import List, Tuple
 import zarr
 from numcodecs import Blosc
@@ -16,8 +16,8 @@ import json
 import os
 from typing import Union
 from tqdm.auto import tqdm
-from src.viz_utils import create_geojson
-from src.constants import (
+from inference.viz_utils import create_geojson
+from inference.constants import (
     CLASS_LABELS_LIZARD,
     CLASS_LABELS_PANNUKE,
 )
@@ -25,7 +25,7 @@ from src.constants import (
 
 def post_process_main(
     params: dict,
-    z: Union[Tuple[zarr.ZipStore, zarr.ZipStore], None] = None,
+    z: Union[Tuple[zarr.storage.ZipStore, zarr.storage.ZipStore], None] = None,
 ):
     """
     Post processing function for inference results. Computes stitched output maps and refines prediction results and produces instance and class maps
@@ -38,7 +38,7 @@ def post_process_main(
 
     Returns
     ----------
-    z_pp: zarr.ZipStore
+    z_pp: zarr.storage.ZipStore
         instance segmentation results as zarr store, kept open for further processing
 
     """

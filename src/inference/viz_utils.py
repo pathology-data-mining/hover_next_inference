@@ -4,7 +4,7 @@ import geojson
 import openslide
 import cv2
 from skimage.measure import regionprops
-from src.constants import (
+from inference.constants import (
     CLASS_LABELS_LIZARD,
     CLASS_LABELS_PANNUKE,
     COLORS_LIZARD,

@@ -5,9 +5,9 @@ from timeit import default_timer as timer
 from datetime import timedelta
 import torch
 from glob import glob
-from src.inference import inference_main, get_inference_setup
-from src.post_process import post_process_main
-from src.data_utils import copy_img
+from inference.inference import inference_main, get_inference_setup
+from inference.post_process import post_process_main
+from inference.data_utils import copy_img
 
 torch.backends.cudnn.benchmark = True
 print(torch.cuda.device_count(), " cuda devices")
@@ -55,7 +55,7 @@ def get_input_type(params):
     return params
 
 
-def main(params: dict):
+def infer(params: dict):
     """
     Start nuclei segmentation and classification pipeline using specified parameters from argparse
 
@@ -135,10 +135,9 @@ def main(params: dict):
         if z_pp is not None:
             z_pp.store.close()
     print("done")
-    sys.exit(0)
 
 
-if __name__ == "__main__":
+def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
@@ -229,4 +228,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--cache", type=str, default=None, help="cache path")
     params = vars(parser.parse_args())
-    main(params)
+
+    infer(parmams)
+
+if __name__ == "__main__":
+    main()
+

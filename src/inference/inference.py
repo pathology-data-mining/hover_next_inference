@@ -13,11 +13,11 @@ from numcodecs import Blosc
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from scipy.special import softmax
-from src.multi_head_unet import get_model, load_checkpoint
-from src.data_utils import WholeSlideDataset, NpyDataset, ImageDataset
-from src.augmentations import color_augmentations
-from src.spatial_augmenter import SpatialAugmenter
-from src.constants import TTA_AUG_PARAMS, VALID_WEIGHTS
+from inference.multi_head_unet import get_model, load_checkpoint
+from inference.data_utils import WholeSlideDataset, NpyDataset, ImageDataset
+from inference.augmentations import color_augmentations
+from inference.spatial_augmenter import SpatialAugmenter
+from inference.constants import TTA_AUG_PARAMS, VALID_WEIGHTS
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -45,7 +45,7 @@ def inference_main(
     ----------
     params: dict
         Parameter store, defined in initial main and modified by this function
-    z: Union(Tuple[zarr.ZipStore, zarr.ZipStore], None)
+    z: Union(Tuple[zarr.storage.ZipStore, zarr.storage.ZipStore], None)
         instance and class segmentation results as zarr stores, kept open for further processing. None if inference was skipped.
     """
     # print(repr(params["p"]))

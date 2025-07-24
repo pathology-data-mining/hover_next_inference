@@ -7,7 +7,7 @@ from skimage.morphology import remove_small_objects, disk, dilation
 import PIL
 import pathlib
 import cv2
-from src.constants import LUT_MAGNIFICATION_MPP, LUT_MAGNIFICATION_X
+from inference.constants import LUT_MAGNIFICATION_MPP, LUT_MAGNIFICATION_X
 from shutil import copy2, copytree
 import os
 from pylibCZIrw import czi as pyczi
