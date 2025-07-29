@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import copy
 import toml
 import requests
@@ -48,13 +49,10 @@ def inference_main(
     z: Union(Tuple[zarr.storage.ZipStore, zarr.storage.ZipStore], None)
         instance and class segmentation results as zarr stores, kept open for further processing. None if inference was skipped.
     """
-    # print(repr(params["p"]))
-    fn = params["p"].split(os.sep)[-1].split(params["ext"])[0]
-    params["output_dir"] = os.path.join(params["output_root"], fn)
-    if not os.path.isdir(params["output_dir"]):
-        os.makedirs(params["output_dir"])
+    output_dir = Path(params.get("output_dir", '.'))
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
     params["model_out_p"] = os.path.join(
-        params["output_dir"], fn + "_raw_" + str(params["tile_size"])
+        params["output_dir"], "raw_" + str(params["tile_size"])
     )
     prog_path = os.path.join(params["output_dir"], "progress.txt")
 

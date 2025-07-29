@@ -71,12 +71,12 @@ def infer(params: dict):
     else:
         print("optimizing postprocessing for: ", params["metric"])
 
-    params["root"] = os.path.dirname(__file__)
+    params["root"] = os.path.dirname(__file__) + "/../../"
     params["data_dirs"] = [
         os.path.join(params["root"], c) for c in params["cp"].split(",")
     ]
 
-    print("saving results to:", params["output_root"])
+    print("saving results to:", params["output_dir"])
     print("loading model from:", params["data_dirs"])
 
     # Run per tile inference and store results
@@ -138,7 +138,7 @@ def infer(params: dict):
 
 
 def main():
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
     parser = argparse.ArgumentParser()
@@ -150,7 +150,7 @@ def main():
         required=True,
     )
     parser.add_argument(
-        "--output_root", type=str, default=None, help="output directory", required=True
+        "--output_dir", type=str, default=None, help="output directory", required=True
     )
     parser.add_argument(
         "--cp",

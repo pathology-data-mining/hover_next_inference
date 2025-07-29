@@ -10,7 +10,6 @@ matplotlib
 mahotas
 pandas
 jupyterlab
-zarr
 tifffile
 h5py
 segmentation-models-pytorch
@@ -22,7 +21,7 @@ staintools
 albumentations
 spams-bin
 toml
-numcodecs
+numcodecs==0.15.1
 imagecodecs
 timm==0.9.6
 geojson

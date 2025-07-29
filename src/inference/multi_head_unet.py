@@ -184,7 +184,7 @@ class DecoderBlock(nn.Module):
             out_channels,
             kernel_size=3,
             padding=1,
-            use_batchnorm=use_batchnorm,
+            use_norm="batchnorm" if use_batchnorm else False,
         )
         self.attention1 = md.Attention(
             attention_type, in_channels=in_channels + skip_channels
@@ -194,7 +194,7 @@ class DecoderBlock(nn.Module):
             out_channels,
             kernel_size=3,
             padding=1,
-            use_batchnorm=use_batchnorm,
+            use_norm="batchnorm" if use_batchnorm else False,
         )
         self.attention2 = md.Attention(attention_type, in_channels=out_channels)
 
@@ -216,14 +216,14 @@ class CenterBlock(nn.Sequential):
             out_channels,
             kernel_size=3,
             padding=1,
-            use_batchnorm=use_batchnorm,
+            use_norm="batchnorm" if use_batchnorm else False,
         )
         conv2 = md.Conv2dReLU(
             out_channels,
             out_channels,
             kernel_size=3,
             padding=1,
-            use_batchnorm=use_batchnorm,
+            use_norm="batchnorm" if use_batchnorm else False,
         )
         super().__init__(conv1, conv2)
 
