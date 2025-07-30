@@ -11,6 +11,7 @@ from scipy.ndimage import find_objects
 from numcodecs import Blosc
 from inference.viz_utils import cont
 from skimage.measure import regionprops
+import xmltodict
 from inference.constants import (
     MIN_THRESHS_LIZARD,
     MIN_THRESHS_PANNUKE,
@@ -679,9 +680,15 @@ def get_openslide_info(sl: openslide.OpenSlide):
         mpp_x = float(sl.properties[openslide.PROPERTY_NAME_MPP_X])
         mpp_y = float(sl.properties[openslide.PROPERTY_NAME_MPP_Y])
     except KeyError:
-        print("'No resolution found in WSI metadata, using default .2425")
-        mpp_x = 0.2425
-        mpp_y = 0.2425
+        # additional logic to catch converted OME TIFF files
+        try:
+            properties = xmltodict.parse(sl.properties['openslide.comment'])
+            mpp_x = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeX'])
+            mpp_y = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeY'])
+        except: 
+            print("'No resolution found in WSI metadata, using default .2425")
+            mpp_x = 0.2425
+            mpp_y = 0.2425
     try:
         bounds_x, bounds_y = (
             int(sl.properties["openslide.bounds-x"]),

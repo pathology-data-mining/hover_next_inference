@@ -11,6 +11,7 @@ from inference.constants import LUT_MAGNIFICATION_MPP, LUT_MAGNIFICATION_X
 from shutil import copy2, copytree
 import os
 from pylibCZIrw import czi as pyczi
+import xmltodict
 
 
 def copy_img(im_path, cache_dir):
@@ -237,9 +238,10 @@ class WholeSlideDataset(Dataset):
             and extension != ".mrxs"
             and extension != ".tif"
             and extension != ".czi"
+            and extension != ".tiff"
         ):
             raise NotImplementedError(
-                "Only *.svs, *.tif, *.czi, and *.mrxs files supported"
+                "Only *.svs, *.tif, *.czi, *.mrxs, *.tiff files supported"
             )
 
         # Load and create slide and affect default values
@@ -273,8 +275,16 @@ class WholeSlideDataset(Dataset):
                 + float(self.s.properties[openslide.PROPERTY_NAME_MPP_Y])
             )
         except KeyError:
-            print("'No resolution found in WSI metadata, using default .2425")
-            self.mpp = 0.2425
+            # additional logic to catch convered OME TIFF files
+            try:
+                properties = xmltodict.parse(self.s.properties['openslide.comment'])
+                mpp_x = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeX'])
+                mpp_y = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeY']) 
+                self.mpp = 0.5*(mpp_x + mpp_y)
+
+            except:
+                print("'No resolution found in WSI metadata, using default .2425")
+                self.mpp = 0.2425
             # raise IndexError('No resolution found in WSI metadata. Impossible to build pyramid.')
 
         # Extract level magnifications
