@@ -50,7 +50,7 @@ def inference_main(
         instance and class segmentation results as zarr stores, kept open for further processing. None if inference was skipped.
     """
     output_dir = Path(params.get("output_dir", '.'))
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     params["model_out_p"] = os.path.join(
         params["output_dir"], "raw_" + str(params["tile_size"])
     )
