@@ -1,4 +1,5 @@
 openslide-python
+openslide-bin
 scikit-learn
 scikit-image
 scipy
