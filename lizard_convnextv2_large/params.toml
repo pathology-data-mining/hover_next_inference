@@ -1,0 +1,67 @@
+dataset = "lizard"
+data_path_liz = ""
+data_path_mit = ""
+hard_labels = ""
+encoder = "convnextv2_large.fcmae_ft_in22k_in1k"
+out_channels_cls = 8
+inst_channels = 5
+pretrained = true
+batch_size = 24
+validation_batch_size = 64
+weight_decay = 0.0001
+learning_rate = 0.0001
+min_learning_rate = 1e-8
+training_steps = 200000
+validation_step = 1000
+checkpoint_step = 10000
+fl_gamma = 2
+loss_lambda = 0.02
+tta = 16
+eval_optim_metric = "mpq"
+n_rounds = 5
+save = false
+f1_metric_ccrop = 248
+match_euc_dist = 6
+eval_criteria = "lizard|alt"
+max_hole_size = 50
+checkpoint_path = ""
+experiment = "lizard_convnextv2_large"
+seed = 42
+fold = 0
+test_as_val = true
+optim_metric = "mpq"
+num_workers = 4
+use_amp = true
+color_scale = 0.2
+
+[aug_params_fast.mirror]
+prob_x = 0.5
+prob_y = 0.5
+prob = 0.5
+
+[aug_params_fast.translate]
+max_percent = 0.05
+prob = 0.2
+
+[aug_params_fast.scale]
+min = 0.8
+max = 1.2
+prob = 0.2
+
+[aug_params_fast.zoom]
+min = 0.8
+max = 1.2
+prob = 0.2
+
+[aug_params_fast.rotate]
+max_degree = 179
+prob = 0.75
+
+[aug_params_fast.shear]
+max_percent = 0.1
+prob = 0.2
+
+[aug_params_fast.elastic]
+alpha = [ 120, 120,]
+sigma = 8
+prob = 0.5

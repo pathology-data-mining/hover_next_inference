@@ -1,0 +1,2 @@
+lizard_convnextv2_large/train/best_model filter=lfs diff=lfs merge=lfs -text
+pannuke_convnextv2_tiny_1/train/best_model filter=lfs diff=lfs merge=lfs -text
