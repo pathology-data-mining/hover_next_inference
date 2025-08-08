@@ -564,27 +564,26 @@ def get_pp_params(params, mit_eval=False):
     fg_threshs = []
     seed_threshs = []
     for exp in params["data_dirs"]:
-        mod_path = os.path.join(params["root"], exp)
         if "pannuke" in exp:
             with open(
-                os.path.join(mod_path, "pannuke_test_param_dict.json"), "r"
+                os.path.join(exp, "pannuke_test_param_dict.json"), "r"
             ) as js:
                 dt = json.load(js)
                 fg_threshs.append(dt[f"best_fg_{eval_metric}"])
                 seed_threshs.append(dt[f"best_seed_{eval_metric}"])
         elif mit_eval:
-            with open(os.path.join(mod_path, "liz_test_param_dict.json"), "r") as js:
+            with open(os.path.join(exp, "liz_test_param_dict.json"), "r") as js:
                 dt = json.load(js)
                 fg_tmp = dt[f"best_fg_{eval_metric}"]
                 seed_tmp = dt[f"best_seed_{eval_metric}"]
-            with open(os.path.join(mod_path, "mit_test_param_dict.json"), "r") as js:
+            with open(os.path.join(exp, "mit_test_param_dict.json"), "r") as js:
                 dt = json.load(js)
                 fg_tmp[-1] = dt[f"best_fg_{eval_metric}"][-1]
                 seed_tmp[-1] = dt[f"best_seed_{eval_metric}"][-1]
             fg_threshs.append(fg_tmp)
             seed_threshs.append(seed_tmp)
         else:
-            with open(os.path.join(mod_path, "param_dict.json"), "r") as js:
+            with open(os.path.join(exp, "param_dict.json"), "r") as js:
                 dt = json.load(js)
                 fg_threshs.append(dt[f"best_fg_{eval_metric}"])
                 seed_threshs.append(dt[f"best_seed_{eval_metric}"])
