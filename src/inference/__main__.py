@@ -71,10 +71,7 @@ def infer(params: dict):
     else:
         print("optimizing postprocessing for: ", params["metric"])
 
-    params["root"] = os.path.dirname(__file__) + "/../../"
-    params["data_dirs"] = [
-        os.path.join(params["root"], c) for c in params["cp"].split(",")
-    ]
+    params["data_dirs"] = params["cp"].split(",")
 
     print("saving results to:", params["output_dir"])
     print("loading model from:", params["data_dirs"])
