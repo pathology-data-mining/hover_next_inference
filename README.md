@@ -106,6 +106,8 @@ python3 main.py --help
 - `--keep_raw`: Keep raw prediction files (can be large)
 - `--metric`: Metric to optimize post-processing for: 'f1', 'mpq', or 'pannuke' (default: 'f1')
 
+For more examples and advanced configurations, see [example_config.sh](example_config.sh).
+
 ## WSI Inference
 
 This pipeline uses OpenSlide to read images, and therefore supports all formats which are supported by OpenSlide. 
