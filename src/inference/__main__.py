@@ -22,16 +22,34 @@ def prepare_input(params):
     params: dict
         input parameters from argparse
 
+    Returns
+    -------
+    list
+        List of input file paths
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input file or pattern does not exist
+    ValueError
+        If no files match the pattern
     """
-    print("input specified: ", params["input"])
+    print("Input specified:", params["input"])
+    
     if params["input"].endswith(".txt"):
         if os.path.exists(params["input"]):
             with open(params["input"], "r") as f:
-                input_list = f.read().splitlines()
+                input_list = [line.strip() for line in f if line.strip()]
+            if not input_list:
+                raise ValueError(f"Text file {params['input']} is empty or contains no valid paths")
         else:
-            raise FileNotFoundError("input file not found")
+            raise FileNotFoundError(f"Input text file not found: {params['input']}")
     else:
         input_list = sorted(glob(params["input"].rstrip()))
+        if not input_list:
+            raise ValueError(f"No files found matching pattern: {params['input']}")
+    
+    print(f"Found {len(input_list)} file(s) to process")
     return input_list
 
 
@@ -63,18 +81,30 @@ def infer(params: dict):
     ----------
     params: dict
         input parameters from argparse
+    
+    Raises
+    ------
+    ValueError
+        If required parameters are invalid
     """
-
+    
+    # Validate checkpoint parameter
+    if not params["cp"]:
+        raise ValueError("Checkpoint parameter (--cp) is required. Please specify a model checkpoint.")
+    
+    # Validate metric
     if params["metric"] not in ["mpq", "f1", "pannuke"]:
+        print(f"Warning: Invalid metric '{params['metric']}', falling back to 'f1'")
         params["metric"] = "f1"
-        print("invalid metric, falling back to f1")
     else:
-        print("optimizing postprocessing for: ", params["metric"])
+        print(f"Optimizing postprocessing for: {params['metric']}")
 
     params["data_dirs"] = params["cp"].split(",")
-
-    print("saving results to:", params["output_dir"])
-    print("loading model from:", params["data_dirs"])
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(params["output_dir"], exist_ok=True)
+    print(f"Results will be saved to: {params['output_dir']}")
+    print(f"Loading model from: {params['data_dirs']}")
 
     # Run per tile inference and store results
     params, models, augmenter, color_aug_fn = get_inference_setup(params)
@@ -135,98 +165,162 @@ def infer(params: dict):
 
 
 def main():
+    """
+    Main entry point for HoVer-NeXt inference pipeline
+    """
+    print("=" * 80)
+    print("HoVer-NeXt Nuclei Segmentation and Classification Pipeline")
+    print("=" * 80)
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
+    print(f"Using device: {device}")
+    if not torch.cuda.is_available():
+        print("WARNING: CUDA is not available. Inference will be very slow on CPU.")
+        print("Please ensure you have a GPU and CUDA installed for optimal performance.")
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="HoVer-NeXt: Fast Nuclei Segmentation and Classification Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Process a single WSI file
+  python3 main.py --input sample.svs --output_dir results/ --cp lizard_convnextv2_large --tta 4
+
+  # Process multiple files using a glob pattern
+  python3 main.py --input "/path/to/slides/*.svs" --output_dir results/ --cp lizard_convnextv2_large
+
+  # Process files listed in a text file
+  python3 main.py --input file_list.txt --output_dir results/ --cp pannuke_convnextv2_tiny_1
+
+For more information, visit: https://github.com/pathology-data-mining/hover_next_inference
+        """
+    )
     parser.add_argument(
         "--input",
         type=str,
         default=None,
-        help="path to wsi, glob pattern or text file containing paths",
+        help="Path to WSI/image/npy file, glob pattern (e.g., '/path/*.svs'), or text file containing paths",
         required=True,
     )
     parser.add_argument(
-        "--output_dir", type=str, default=None, help="output directory", required=True
+        "--output_dir", 
+        type=str, 
+        default=None, 
+        help="Output directory where results will be saved", 
+        required=True
     )
     parser.add_argument(
         "--cp",
         type=str,
         default=None,
-        help="comma separated list of checkpoint folders to consider",
+        help="Model checkpoint ID (e.g., 'lizard_convnextv2_large') or comma-separated list for ensemble",
+        required=True,
     )
     parser.add_argument(
         "--only_inference",
         action="store_true",
-        help="split inference to gpu and cpu node/ only run inference",
+        help="Only run inference step (useful for splitting GPU/CPU work on clusters)",
     )
     parser.add_argument(
-        "--metric", type=str, default="f1", help="metric to optimize for pp"
+        "--metric", 
+        type=str, 
+        default="f1", 
+        help="Metric to optimize post-processing for: 'f1', 'mpq', or 'pannuke' (default: f1)"
     )
-    parser.add_argument("--batch_size", type=int, default=64, help="batch size")
+    parser.add_argument(
+        "--batch_size", 
+        type=int, 
+        default=64, 
+        help="Batch size for inference (default: 64)"
+    )
     parser.add_argument(
         "--tta",
         type=int,
         default=4,
-        help="test time augmentations, number of views (4= results from 4 different augmentations are averaged for each sample)",
+        help="Number of test-time augmentation views (default: 4, use 4 for robust results)",
     )
     parser.add_argument(
         "--save_polygon",
         action="store_true",
-        help="save output as polygons to load in qupath",
+        help="Save output as polygon GeoJSON files for QuPath",
     )
     parser.add_argument(
         "--tile_size",
         type=int,
         default=256,
-        help="tile size, models are trained on 256x256",
+        help="Tile size in pixels (default: 256, models are trained on 256x256)",
     )
     parser.add_argument(
         "--overlap",
         type=float,
         default=0.96875,
-        help="overlap between tiles, at 0.5mpp, 0.96875 is best, for 0.25mpp use 0.9375 for better results",
+        help="Overlap between tiles as a fraction (default: 0.96875 for 0.5mpp, use 0.9375 for 0.25mpp)",
     )
     parser.add_argument(
         "--inf_workers",
         type=int,
         default=4,
-        help="number of workers for inference dataloader, maximally set this to number of cores",
+        help="Number of workers for inference dataloader (default: 4, set to number of CPU cores for best performance)",
     )
     parser.add_argument(
         "--inf_writers",
         type=int,
         default=2,
-        help="number of writers for inference dataloader, default 2 should be sufficient"
-        + ", tune based on core availability and delay between final inference step and inference finalization",
+        help="Number of writers for inference dataloader (default: 2, tune based on core availability)",
     )
     parser.add_argument(
         "--pp_tiling",
         type=int,
         default=8,
-        help="tiling factor for post processing, number of tiles per dimension, 8 = 64 tiles",
+        help="Tiling factor for post-processing (default: 8, increase if running out of memory)",
     )
     parser.add_argument(
         "--pp_overlap",
         type=int,
         default=256,
-        help="overlap for postprocessing tiles, put to around tile_size",
+        help="Overlap for post-processing tiles in pixels (default: 256, set to around tile_size)",
     )
     parser.add_argument(
         "--pp_workers",
         type=int,
         default=16,
-        help="number of workers for postprocessing, maximally set this to number of cores",
+        help="Number of workers for post-processing (default: 16, set to number of CPU cores)",
     )
     parser.add_argument(
         "--keep_raw",
         action="store_true",
-        help="keep raw predictions (can be large files for particularly for pannuke)",
+        help="Keep raw prediction files (warning: can be large files, especially for PanNuke)",
     )
-    parser.add_argument("--cache", type=str, default=None, help="cache path")
+    parser.add_argument(
+        "--cache", 
+        type=str, 
+        default=None, 
+        help="Cache path for temporary files"
+    )
     params = vars(parser.parse_args())
-
-    infer(params)
+    
+    try:
+        infer(params)
+        print("\n" + "=" * 80)
+        print("Pipeline completed successfully!")
+        print("=" * 80)
+    except FileNotFoundError as e:
+        print(f"\nError: {e}")
+        print("Please check that your input files exist and paths are correct.")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"\nError: {e}")
+        print("Please check your input parameters and try again.")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n\nPipeline interrupted by user.")
+        sys.exit(130)
+    except Exception as e:
+        print(f"\nUnexpected error occurred: {e}")
+        print("If this error persists, please report it as an issue on GitHub.")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
