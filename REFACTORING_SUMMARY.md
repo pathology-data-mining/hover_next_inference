@@ -23,7 +23,7 @@ This document summarizes the improvements made to enhance the usability of the H
 - **Input validation**: Added validation for required parameters and file paths
 - **Error handling**: Comprehensive error handling with user-friendly messages
 - **Better feedback**: Improved console output with clear status messages
-- **Fixed syntax warning**: Removed invalid escape sequence
+- **Fixed syntax warning**: Removed invalid escape sequence in line 201 (`", \ tune"` → `", tune"`)
 
 ### 4. Added Example Configurations (`example_config.sh`)
 - 14 comprehensive examples covering:
@@ -84,17 +84,19 @@ All changes are **backward compatible**:
 
 ### For Users Currently Using the Old Documentation
 
-If you were using:
+The README previously used `--output_root` but the actual parameter name in the code was `--output_dir`. This has been fixed in the documentation.
+
+If you were following the old README examples:
 ```bash
 python3 main.py --output_root "results/"
 ```
 
-Change to:
+You should now use the correct parameter name (which actually always was required):
 ```bash
 python3 main.py --output_dir "results/"
 ```
 
-All other arguments remain the same.
+Note: The code itself hasn't changed for this parameter - only the documentation has been corrected.
 
 ### For Users Installing as a Package
 
