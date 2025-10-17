@@ -198,7 +198,7 @@ def main():
         type=int,
         default=2,
         help="number of writers for inference dataloader, default 2 should be sufficient"
-        + ", \ tune based on core availability and delay between final inference step and inference finalization",
+        + ", tune based on core availability and delay between final inference step and inference finalization",
     )
     parser.add_argument(
         "--pp_tiling",

@@ -8,11 +8,36 @@ For training code, please check the [hover-next training repository](https://git
 
 Find the Publication here: [https://openreview.net/pdf?id=3vmB43oqIO](https://openreview.net/pdf?id=3vmB43oqIO)
 
+## Quick Start
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/pathology-data-mining/hover_next_inference.git
+cd hover_next_inference
+
+# 2. Set up environment (using conda)
+conda env create -f environment.yml
+conda activate hovernext
+pip install torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
+
+# 3. Run inference on a slide
+python3 main.py \
+    --input "/path-to-wsi/wsi.svs" \
+    --output_dir "results/" \
+    --cp "lizard_convnextv2_large" \
+    --tta 4 \
+    --inf_workers 16 \
+    --pp_tiling 10 \
+    --pp_workers 16
+```
+
+The model weights are automatically downloaded on first use.
+
 ## Setup
 
 Environments for train and inference are the same so if you already have set the environment up for training, you can use it for inference as well.
 
-Otherwise: 
+### Option 1: Using Conda (Recommended)
 
 ```bash
 conda env create -f environment.yml
@@ -20,7 +45,25 @@ conda activate hovernext
 pip install torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
 ```
 
-or use predefined [docker/singularity container](#docker-and-apptainersingularity-container)
+### Option 2: Install as Python Package
+
+```bash
+# Install dependencies first
+pip install -r requirements.txt
+pip install torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
+
+# Install the package
+pip install -e .
+```
+
+After installation, you can run inference using either:
+- `python3 main.py [arguments]` from the repository directory
+- `hover-next-inference [arguments]` from anywhere (after pip install)
+- `python3 -m inference [arguments]` from anywhere (after pip install)
+
+### Option 3: Docker/Singularity Container
+
+Use predefined [docker/singularity container](#docker-and-apptainersingularity-container)
 
 ## Model Weights
 
@@ -38,6 +81,31 @@ By specifying one of the ID's listed, weights are **automatically** downloaded a
 
 If you are manually downloading weights, unzip them in the directory, such that the folder (e.g. ```lizard_convnextv2_large```) sits in the same directory as ```main.py```.
 
+## Usage
+
+### Command-line Arguments
+
+Get a full list of available arguments:
+```bash
+python3 main.py --help
+```
+
+### Required Arguments
+- `--input`: Path to input file, glob pattern (e.g., "/path/*.svs"), or text file containing paths
+- `--output_dir`: Directory where results will be saved
+- `--cp`: Model checkpoint identifier (see [Model Weights](#model-weights)) or path to local checkpoint
+
+### Common Optional Arguments
+- `--tta`: Number of test-time augmentation views (default: 4, recommended for robust results)
+- `--batch_size`: Batch size for inference (default: 64)
+- `--inf_workers`: Number of workers for inference dataloader (default: 4, set to number of CPU cores)
+- `--pp_workers`: Number of workers for post-processing (default: 16, set to number of CPU cores)
+- `--pp_tiling`: Tiling factor for post-processing (default: 8, increase if running out of memory)
+- `--save_polygon`: Save output as polygons for QuPath
+- `--only_inference`: Only run inference step (useful for GPU/CPU separation on clusters)
+- `--keep_raw`: Keep raw prediction files (can be large)
+- `--metric`: Metric to optimize post-processing for: 'f1', 'mpq', or 'pannuke' (default: 'f1')
+
 ## WSI Inference
 
 This pipeline uses OpenSlide to read images, and therefore supports all formats which are supported by OpenSlide. 
@@ -50,7 +118,7 @@ To run a single slide:
 ```bash
 python3 main.py \
     --input "/path-to-wsi/wsi.svs" \
-    --output_root "results/" \
+    --output_dir "results/" \
     --cp "lizard_convnextv2_large" \
     --tta 4 \
     --inf_workers 16 \
@@ -72,7 +140,7 @@ NPY and image inference works the same as WSI inference, however output files ar
 ```bash
 python3 main.py \
     --input "/path-to-file/file.npy" \
-    --output_root "/results/" \
+    --output_dir "/results/" \
     --cp "lizard_convnextv2_large" \
     --tta 4 \
     --inf_workers 16 \
@@ -105,7 +173,7 @@ export APPTAINER_BINDPATH="/storage"
 apptainer exec --nv /path-to-container/hover_next.sif \
     python3 /path-to-repo/main.py \
     --input "/path-to-wsi/*.svs" \
-    --output_root "results/" \
+    --output_dir "results/" \
 	--cp "lizard_convnextv2_large" \
     --tta 4 
 ```
