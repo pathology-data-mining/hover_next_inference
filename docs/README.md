@@ -10,6 +10,12 @@ Welcome to the HoVer-NeXt inference documentation!
   - Module reference
   - Advanced usage patterns
   - Custom extensions guide
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
+  - Installation problems
+  - Runtime errors
+  - Performance optimization
+  - Output quality issues
+  - File format problems
 
 ## Main Repository Documentation
 
