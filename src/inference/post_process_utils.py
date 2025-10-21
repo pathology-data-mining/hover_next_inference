@@ -149,10 +149,15 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
             pinst_out[t_[-1]] = np.asarray(pinst_, dtype=np.int32)
 
         else:
+            # Handle WSI case with overlap resolution
             pinst_ = np.asarray(pinst_, dtype=np.int32)
+            
+            # Get overlapping regions between current tile and already written tiles
             ov_regions, local_regions, which = get_overlap_regions(
                 t_, params["pp_overlap"], pinst_out.shape
             )
+            
+            # Assign unique IDs to instances in current tile
             msk = pinst_ != 0
             pinst_[msk] += running_max
             pcls_ = {str(int(k) + running_max): v for k, v in pcls_.items()}
@@ -160,15 +165,20 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
             initial_ids = np.unique(pinst_[msk])
             old_ids = []
 
+            # Process each overlapping region
             for reg, loc, whi in zip(ov_regions, local_regions, which):
                 if reg is None:
                     continue
 
+                # Get already written instances in the overlap region
                 written = np.array(
                     pinst_out[reg[2] : reg[3], reg[0] : reg[1]], dtype=np.int32
                 )
                 old_ids.append(np.unique(written[written != 0]))
 
+                # Define subregions for continuity checking
+                # Small region (1/4): high confidence that instances should continue
+                # Large region (1/2): area to check for instance bounding boxes
                 small, large = get_subregions(whi, written.shape)
                 subregion = written[
                     small[0] : small[1], small[2] : small[3]
@@ -176,27 +186,39 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
                 larger_subregion = written[
                     large[0] : large[1], large[2] : large[3]
                 ]  # 1/2 of the region
+                
+                # Find instances that should continue from previous tiles
                 keep = np.unique(subregion[subregion != 0])
                 if len(keep) == 0:
                     continue
 
+                # Get bounding boxes for instances to keep
                 keep_objects = find_objects(
                     larger_subregion, max_label=max(keep)
                 )  # [keep-1]
+                
+                # Get corresponding region in current tile
                 pinst_reg = pinst_[loc[2] : loc[3], loc[0] : loc[1]][
                     large[0] : large[1], large[2] : large[3]
                 ]
 
+                # Transfer instance IDs from previous tiles to maintain continuity
                 for id_ in keep:
                     obj = keep_objects[id_ - 1]
                     if obj is None:
                         continue
+                    # Overwrite current tile instances with previous tile IDs where they overlap
                     written_mask = larger_subregion[obj] == id_
                     pinst_reg[obj][written_mask] = id_
 
+            # Update class dictionary to reflect merged instances
             old_ids = np.concatenate(old_ids)
             pcls_out = update_dicts(pinst_, pcls_, pcls_out, t_, old_ids, initial_ids)
+            
+            # Write processed tile to output
             pinst_out[t_[2] : t_[3], t_[0] : t_[1]] = pinst_
+            
+            # Extract polygons if requested
             if params["save_polygon"]:
                 props = [(p.label, p.image, p.bbox) for p in regionprops(np.asarray(pinst_))]
                 class_labels_partial = [pcls_out[str(p[0])] for p in props]
