@@ -1,3 +1,36 @@
+"""
+Visualization and export utilities for inference results.
+
+This module provides functions to convert instance segmentation results into various
+formats for visualization and analysis in external tools like QuPath.
+
+Key Features
+------------
+- GeoJSON export for QuPath polygon visualization
+- TSV export for QuPath centroid detection import
+- Polygon extraction from instance masks
+- Automatic color assignment by class
+- Coordinate transformation for different resolutions
+
+Main Functions
+--------------
+create_geojson : Create GeoJSON file with nucleus polygons
+create_tsvs : Create TSV files with nucleus centroids
+cont : Extract polygon contours from binary masks
+create_polygon_output : Generate polygon outputs for visualization
+
+Supported Formats
+-----------------
+- GeoJSON: Full polygon geometries with classifications
+- TSV: Centroid coordinates with class labels
+- Compatible with QuPath v0.3+ for direct import
+
+Examples
+--------
+>>> from inference.viz_utils import create_geojson
+>>> create_geojson(polygons, class_ids, CLASS_LABELS_LIZARD, params)
+>>> # Creates poly.geojson file in output directory
+"""
 import os
 import numpy as np
 import geojson
@@ -15,6 +48,36 @@ from inference.constants import (
 
 
 def create_geojson(polygons, classids, lookup, params):
+    """
+    Create a GeoJSON file from nucleus polygons and classifications.
+    
+    This function converts instance segmentation results into a GeoJSON format
+    that can be imported into QuPath or other visualization tools.
+    
+    Parameters
+    ----------
+    polygons : list
+        List of polygon coordinates for each nucleus
+    classids : list
+        List of class IDs corresponding to each polygon
+    lookup : dict
+        Dictionary mapping class IDs to class names
+    params : dict
+        Parameter dictionary containing:
+        - 'pannuke': boolean indicating if using PanNuke classes
+        - 'ds_factor': downsampling factor for coordinate conversion
+        - 'output_dir': directory to save the GeoJSON file
+    
+    Returns
+    -------
+    None
+        Writes GeoJSON file to params['output_dir']/poly.geojson
+    
+    Notes
+    -----
+    Invalid polygons are automatically skipped with a warning message.
+    Colors are assigned based on the model type (PanNuke or Lizard).
+    """
     features = []
     colors = COLORS_PANNUKE if params["pannuke"] else COLORS_LIZARD 
     if isinstance(classids[0], (list, tuple)):
@@ -49,6 +112,32 @@ def create_geojson(polygons, classids, lookup, params):
 
 
 def create_tsvs(pcls_out, params):
+    """
+    Create TSV files for QuPath import with nucleus centroids and classifications.
+    
+    Generates one TSV file per class type with centroid coordinates in image space.
+    These files can be directly imported into QuPath for visualization and analysis.
+    
+    Parameters
+    ----------
+    pcls_out : dict
+        Dictionary mapping instance IDs to (class_id, centroid) tuples
+    params : dict
+        Parameter dictionary containing:
+        - 'pannuke': boolean indicating if using PanNuke classes
+        - 'ds_factor': downsampling factor for coordinate conversion
+        - 'output_dir': directory to save TSV files
+    
+    Returns
+    -------
+    None
+        Writes one TSV file per class to params['output_dir']/pred_<class_name>.tsv
+    
+    Notes
+    -----
+    TSV format: x, y, name, color (tab-separated)
+    Coordinates are scaled by ds_factor to match original image resolution.
+    """
     pred_keys = CLASS_LABELS_PANNUKE if params["pannuke"] else CLASS_LABELS_LIZARD
 
     coord_array = np.array([[i[0], *i[1]] for i in pcls_out.values()])
@@ -79,6 +168,29 @@ def create_tsvs(pcls_out, params):
 
 
 def cont(x, offset=None):
+    """
+    Extract contour polygon from a binary nucleus mask.
+    
+    Uses OpenCV contour detection with TC89_KCOS chain approximation for efficient
+    polygon representation. Handles edge cases like single-pixel detections.
+    
+    Parameters
+    ----------
+    x : tuple
+        Tuple containing (label_id, binary_mask, bounding_box)
+    offset : list or tuple, optional
+        [y_offset, x_offset] to add to contour coordinates for global positioning
+    
+    Returns
+    -------
+    np.ndarray
+        Contour coordinates as (N, 2) array of [x, y] points
+    
+    Notes
+    -----
+    For single-pixel nuclei, the mask is upscaled 2x before contour detection
+    to ensure valid contour extraction.
+    """
     _, im, bb = x
     im = np.pad(im.astype(np.uint8), 1, mode="constant", constant_values=0)
 

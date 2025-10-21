@@ -1,3 +1,42 @@
+"""
+Multi-head U-Net model architecture for nuclei segmentation and classification.
+
+This module implements the HoVer-NeXt model architecture, which uses a ConvNeXt-v2
+encoder with dual decoder heads for simultaneous instance segmentation and cell
+type classification.
+
+Architecture Overview
+---------------------
+- Encoder: ConvNeXt-v2 backbone (tiny/base/large variants)
+- Decoder 1: Instance segmentation (HoVer branch)
+- Decoder 2: Classification branch
+- Shared encoder for computational efficiency
+
+Key Components
+--------------
+TimmEncoderFixed : Modified timm encoder with fixed feature extraction
+MultiHeadModel : Complete model with shared encoder and multiple decoder heads
+UnetDecoder : U-Net style decoder with skip connections
+Conv2dReLU : Basic convolutional block with ReLU activation
+DecoderBlock : U-Net decoder block with upsampling and skip connections
+
+Functions
+---------
+get_model : Factory function to create model with specified configuration
+load_checkpoint : Load pretrained weights with DataParallel handling
+
+Examples
+--------
+>>> from inference.multi_head_unet import get_model, load_checkpoint
+>>> model = get_model(enc='convnextv2_large.fcmae_ft_in22k_in1k')
+>>> model = load_checkpoint(model, 'checkpoint.pth', device='cuda:0')
+>>> inst_pred, cls_pred = model(input_batch)
+
+References
+----------
+HoVer-NeXt paper: https://openreview.net/pdf?id=3vmB43oqIO
+ConvNeXt-v2: https://arxiv.org/abs/2301.00808
+"""
 import segmentation_models_pytorch as smp
 
 # from segmentation_models_pytorch.encoders import get_encoder
@@ -12,7 +51,36 @@ import timm
 
 def load_checkpoint(model, cp_path, device):
     """
-    load checkpoint and fix DataParallel/DistributedDataParallel
+    Load model checkpoint and handle DataParallel/DistributedDataParallel wrappers.
+    
+    This function loads a PyTorch checkpoint and automatically handles cases where
+    the model was trained with DataParallel or DistributedDataParallel by removing
+    the 'module.' prefix from state dict keys.
+    
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Model instance to load weights into
+    cp_path : str
+        Path to the checkpoint file (.pth)
+    device : torch.device or str
+        Device to map the checkpoint to ('cuda:0', 'cpu', etc.)
+    
+    Returns
+    -------
+    torch.nn.Module
+        Model with loaded weights
+    
+    Raises
+    ------
+    RuntimeError
+        If checkpoint loading fails after both attempts
+    
+    Notes
+    -----
+    The function first attempts direct loading, then tries removing the 'module.'
+    prefix if the initial attempt fails. This is necessary when loading checkpoints
+    saved from DataParallel training into a non-parallel model.
     """
 
     cp = torch.load(cp_path, map_location=device)
@@ -91,6 +159,44 @@ def get_model(
     out_channels_inst=5,
     pretrained=True,
 ):
+    """
+    Create a multi-head U-Net model with ConvNeXt encoder for nuclei segmentation.
+    
+    This function builds the HoVer-NeXt architecture with separate decoders for
+    instance segmentation (HoVer branch) and classification branches.
+    
+    Parameters
+    ----------
+    enc : str, optional
+        Encoder architecture name from timm library. Default is 'convnextv2_tiny.fcmae_ft_in22k_in1k'.
+        Common options: 'convnextv2_tiny', 'convnextv2_base', 'convnextv2_large'
+    out_channels_cls : int, optional
+        Number of output channels for classification head (number of classes + 1 for background).
+        Default is 8 (for Lizard dataset: 7 classes + background)
+    out_channels_inst : int, optional
+        Number of output channels for instance segmentation head.
+        Default is 5 (for HoVer: horizontal, vertical gradients, foreground, 2 auxiliary)
+    pretrained : bool, optional
+        Whether to use ImageNet pretrained weights for encoder. Default is True.
+    
+    Returns
+    -------
+    MultiHeadModel
+        The complete multi-head U-Net model ready for inference or training
+    
+    Notes
+    -----
+    The model has two separate decoder branches:
+    - Instance decoder: Predicts HoVer maps (gradients + foreground)
+    - Classification decoder: Predicts cell type classifications
+    
+    Both decoders share the same encoder for efficiency.
+    
+    Examples
+    --------
+    >>> model = get_model(enc='convnextv2_large.fcmae_ft_in22k_in1k', out_channels_cls=6)
+    >>> output_inst, output_cls = model(input_tensor)
+    """
     depth = 4 if "next" in enc else 5
     encoder = TimmEncoderFixed(
         name=enc,

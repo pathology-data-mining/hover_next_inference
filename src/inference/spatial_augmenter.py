@@ -1,3 +1,34 @@
+"""
+Spatial augmentation module for test-time augmentation (TTA).
+
+This module implements reversible geometric transformations for images and labels,
+enabling test-time augmentation workflows where predictions are averaged across
+multiple augmented views of the same image.
+
+Key Features
+------------
+- Forward and inverse transformations for TTA
+- Multiple geometric augmentations: mirror, translate, scale, rotate, shear, elastic
+- Separate interpolation for images (bilinear) and labels (nearest)
+- GPU-accelerated using PyTorch grid sampling
+- Deterministic inverse transforms using stored random states
+
+Classes
+-------
+SpatialAugmenter : torch.nn.Module
+    Main augmentation module supporting forward and inverse transformations
+
+Examples
+--------
+>>> from inference.constants import TTA_AUG_PARAMS
+>>> augmenter = SpatialAugmenter(TTA_AUG_PARAMS)
+>>> # Forward transform
+>>> img_aug = augmenter.forward_transform(img)
+>>> # Get predictions on augmented image
+>>> pred_aug = model(img_aug)
+>>> # Inverse transform to original space
+>>> pred = augmenter.inverse_transform(pred_aug)
+"""
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -8,18 +39,45 @@ import math
 class SpatialAugmenter(
     torch.nn.Module,
 ):
+    """
+    Spatial augmentation module for geometric transformations on images and labels.
+    
+    This module applies various spatial transformations including mirroring, translation,
+    scaling, rotation, shearing, and elastic deformations. It supports both forward and
+    inverse transformations, making it suitable for test-time augmentation workflows.
+    
+    Parameters
+    ----------
+    params : dict
+        Dictionary of augmentation parameters with the following structure:
+        - 'mirror': {'prob': float [0,1], 'prob_x': float [0,1], 'prob_y': float [0,1]}
+        - 'translate': {'max_percent': float [0,1], 'prob': float [0,1]}
+        - 'scale': {'min': float, 'max': float, 'prob': float [0,1]}
+        - 'zoom': {'min': float, 'max': float, 'prob': float [0,1]}
+        - 'rotate': {'rot90': bool, 'max_degree': int [0,360], 'prob': float [0,1]}
+        - 'shear': {'max_percent': float [0,1], 'prob': float [0,1]}
+        - 'elastic': {'alpha': list[float|int], 'sigma': float|int, 'prob': float [0,1]}
+    interpolation : str, optional
+        Interpolation mode for image resampling ('bilinear' or 'nearest'). Default is 'bilinear'.
+    padding_mode : str, optional
+        Padding mode for grid sampling ('zeros', 'border', or 'reflection'). Default is 'zeros'.
+    
+    Attributes
+    ----------
+    mode : str
+        Current transformation mode ('forward' or 'inverse')
+    random_state : dict
+        Stores random state for deterministic inverse transformations
+    
+    Examples
+    --------
+    >>> from inference.constants import TTA_AUG_PARAMS
+    >>> augmenter = SpatialAugmenter(TTA_AUG_PARAMS)
+    >>> img_aug = augmenter.forward_transform(img)
+    >>> img_inv = augmenter.inverse_transform(img_aug)
+    """
 
     def __init__(self, params, interpolation="bilinear", padding_mode="zeros"):
-        """
-        params= {
-            'mirror': {'prob': float [0,1], 'prob_x': float [0,1],'prob_y': float [0,1]},
-            'translate': {'max_percent':float [0,1], 'prob': float [0,1]},
-            'scale': {'min': float, 'max':float, 'prob': float [0,1]},
-            'zoom': {'min': float, 'max':float, 'prob': float [0,1]},
-            'rotate': {'rot90': bool, 'max_degree': int [0,360], 'prob': float [0,1]},
-            'shear': {'max_percent': float [0,1], 'prob': float [0,1]},
-            'elastic': {'alpha': list[float|int], 'sigma': float|int, 'prob': float [0,1]}}
-        """
         super(SpatialAugmenter, self).__init__()
         self.params = params
         self.mode = "forward"
@@ -31,6 +89,26 @@ class SpatialAugmenter(
         self.padding_mode = padding_mode
 
     def forward_transform(self, img, label=None, random_state=None):
+        """
+        Apply forward spatial transformations to image and optional label.
+        
+        Parameters
+        ----------
+        img : torch.Tensor
+            Input image tensor of shape (B, C, H, W)
+        label : torch.Tensor, optional
+            Optional label tensor of same spatial dimensions as img
+        random_state : dict, optional
+            If provided, uses this random state instead of generating new one.
+            Useful for applying same transformations across multiple inputs.
+        
+        Returns
+        -------
+        img : torch.Tensor
+            Transformed image tensor
+        label : torch.Tensor or None
+            Transformed label tensor if provided, None otherwise
+        """
         self.mode = "forward"
         self.device = img.device
         if random_state:
@@ -51,6 +129,28 @@ class SpatialAugmenter(
             return img
 
     def inverse_transform(self, img, label=None, random_state=None):
+        """
+        Apply inverse spatial transformations to reverse forward transformations.
+        
+        This method reverses transformations in the opposite order they were applied,
+        useful for test-time augmentation where predictions need to be transformed back.
+        
+        Parameters
+        ----------
+        img : torch.Tensor
+            Transformed image tensor of shape (B, C, H, W)
+        label : torch.Tensor, optional
+            Optional transformed label tensor
+        random_state : dict, optional
+            Random state from forward transform. If not provided, uses stored random_state.
+        
+        Returns
+        -------
+        img : torch.Tensor
+            Inverse-transformed image tensor
+        label : torch.Tensor or None
+            Inverse-transformed label tensor if provided, None otherwise
+        """
         self.mode = "inverse"
         self.device = img.device
         keylist = list(self.params.keys())
