@@ -1,3 +1,34 @@
+"""
+Post-processing utilities for instance segmentation.
+
+This module contains core post-processing functions for converting raw model predictions
+into final instance segmentation maps. It handles tile stitching, overlap resolution,
+and watershed-based instance separation.
+
+Key Features
+------------
+- Parallel processing of tiles for efficiency
+- Intelligent overlap handling to maintain instance continuity
+- Watershed segmentation for instance separation
+- Size-based filtering and morphological refinement
+- Support for both WSI and array inputs
+
+Main Functions
+--------------
+work : Process a single tile (called by parallel workers)
+write : Write tile results with overlap handling
+update_dicts : Update class dictionaries during stitching
+gen_tile_map : Generate stitched prediction maps from raw tiles
+get_pp_params : Load optimized post-processing parameters
+get_shapes : Calculate output dimensions and tile coordinates
+get_tile_coords : Generate tile coordinates for parallel processing
+
+Notes
+-----
+This module is designed to work with the zarr-compressed outputs from the
+inference stage and produces final instance maps with unique IDs across the
+entire image.
+"""
 import numpy as np
 import cv2
 import zarr
@@ -25,6 +56,32 @@ from inference.data_utils import center_crop, WholeSlideDataset, NpyDataset, Ima
 
 
 def update_dicts(pinst_, pcls_, pcls_out, t_, old_ids, initial_ids):
+    """
+    Update class dictionaries with new instance information during post-processing.
+    
+    This function reconciles instance IDs and their corresponding class labels and centroids
+    when stitching tiles together, ensuring consistency across overlapping regions.
+    
+    Parameters
+    ----------
+    pinst_ : np.ndarray
+        Instance segmentation map for current tile
+    pcls_ : dict
+        Dictionary mapping instance IDs to (class_id, centroid) tuples for current tile
+    pcls_out : dict
+        Accumulated output dictionary with all processed instances
+    t_ : tuple
+        Tile coordinates (x_start, x_end, y_start, y_end)
+    old_ids : np.ndarray
+        Instance IDs from previously processed overlapping regions
+    initial_ids : np.ndarray
+        Initial instance IDs before overlap processing
+    
+    Returns
+    -------
+    dict
+        Updated class dictionary with reconciled instance information
+    """
     props = [(p.label, p.centroid) for p in regionprops(pinst_)]
     pcls_new = {}
     for id_, cen in props:
@@ -49,6 +106,34 @@ def update_dicts(pinst_, pcls_, pcls_out, t_, old_ids, initial_ids):
 
 
 def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly):
+    """
+    Write processed tile results to the output arrays with overlap handling.
+    
+    This function stitches together individual tile predictions by handling overlapping
+    regions and maintaining consistent instance IDs across the entire image.
+    
+    Parameters
+    ----------
+    pinst_out : zarr.Array
+        Output instance segmentation array
+    pcls_out : dict
+        Output class dictionary mapping instance IDs to (class_id, centroid)
+    running_max : int
+        Current maximum instance ID used for assigning unique IDs
+    res : tuple
+        Result tuple containing (pinst_, pcls_, max_, t_, skip) from worker process
+    params : dict
+        Parameter dictionary with processing configuration
+    class_labels : list
+        List of class labels for polygon output
+    res_poly : list
+        List of polygon results for QuPath export
+    
+    Returns
+    -------
+    tuple
+        Updated (pinst_out, pcls_out, running_max, class_labels, res_poly)
+    """
     pinst_, pcls_, max_, t_, skip = res
     if not skip:
         if params["input_type"] != "wsi":
@@ -64,10 +149,15 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
             pinst_out[t_[-1]] = np.asarray(pinst_, dtype=np.int32)
 
         else:
+            # Handle WSI case with overlap resolution
             pinst_ = np.asarray(pinst_, dtype=np.int32)
+            
+            # Get overlapping regions between current tile and already written tiles
             ov_regions, local_regions, which = get_overlap_regions(
                 t_, params["pp_overlap"], pinst_out.shape
             )
+            
+            # Assign unique IDs to instances in current tile
             msk = pinst_ != 0
             pinst_[msk] += running_max
             pcls_ = {str(int(k) + running_max): v for k, v in pcls_.items()}
@@ -75,15 +165,20 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
             initial_ids = np.unique(pinst_[msk])
             old_ids = []
 
+            # Process each overlapping region
             for reg, loc, whi in zip(ov_regions, local_regions, which):
                 if reg is None:
                     continue
 
+                # Get already written instances in the overlap region
                 written = np.array(
                     pinst_out[reg[2] : reg[3], reg[0] : reg[1]], dtype=np.int32
                 )
                 old_ids.append(np.unique(written[written != 0]))
 
+                # Define subregions for continuity checking
+                # Small region (1/4): high confidence that instances should continue
+                # Large region (1/2): area to check for instance bounding boxes
                 small, large = get_subregions(whi, written.shape)
                 subregion = written[
                     small[0] : small[1], small[2] : small[3]
@@ -91,27 +186,39 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
                 larger_subregion = written[
                     large[0] : large[1], large[2] : large[3]
                 ]  # 1/2 of the region
+                
+                # Find instances that should continue from previous tiles
                 keep = np.unique(subregion[subregion != 0])
                 if len(keep) == 0:
                     continue
 
+                # Get bounding boxes for instances to keep
                 keep_objects = find_objects(
                     larger_subregion, max_label=max(keep)
                 )  # [keep-1]
+                
+                # Get corresponding region in current tile
                 pinst_reg = pinst_[loc[2] : loc[3], loc[0] : loc[1]][
                     large[0] : large[1], large[2] : large[3]
                 ]
 
+                # Transfer instance IDs from previous tiles to maintain continuity
                 for id_ in keep:
                     obj = keep_objects[id_ - 1]
                     if obj is None:
                         continue
+                    # Overwrite current tile instances with previous tile IDs where they overlap
                     written_mask = larger_subregion[obj] == id_
                     pinst_reg[obj][written_mask] = id_
 
+            # Update class dictionary to reflect merged instances
             old_ids = np.concatenate(old_ids)
             pcls_out = update_dicts(pinst_, pcls_, pcls_out, t_, old_ids, initial_ids)
+            
+            # Write processed tile to output
             pinst_out[t_[2] : t_[3], t_[0] : t_[1]] = pinst_
+            
+            # Extract polygons if requested
             if params["save_polygon"]:
                 props = [(p.label, p.image, p.bbox) for p in regionprops(np.asarray(pinst_))]
                 class_labels_partial = [pcls_out[str(p[0])] for p in props]
@@ -124,6 +231,35 @@ def write(pinst_out, pcls_out, running_max, res, params, class_labels, res_poly)
 
 
 def work(tcrd, ds_coord, z, params):
+    """
+    Process a single tile: stitch predictions and perform instance segmentation.
+    
+    This is the main worker function for parallel post-processing of tiles. It loads
+    raw predictions, stitches them together, and applies watershed segmentation to
+    generate final instance maps.
+    
+    Parameters
+    ----------
+    tcrd : tuple
+        Tile coordinates (x_start, x_end, y_start, y_end) in output space
+    ds_coord : list
+        List of dataset coordinates for each tile in inference space
+    z : tuple of zarr.Array
+        Tuple containing (instance_predictions, class_predictions) zarr arrays
+    params : dict
+        Parameter dictionary with processing configuration including thresholds,
+        overlap settings, and input type information
+    
+    Returns
+    -------
+    tuple
+        (pinst_, pcls_, max_id, tcrd, skip) where:
+        - pinst_: instance segmentation result for this tile
+        - pcls_: class dictionary for instances in this tile
+        - max_id: maximum instance ID used in this tile
+        - tcrd: tile coordinates
+        - skip: boolean indicating if tile was skipped
+    """
     out_img = gen_tile_map(
         tcrd,
         ds_coord,

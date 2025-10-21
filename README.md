@@ -108,6 +108,13 @@ python3 main.py --help
 
 For more examples and advanced configurations, see [example_config.sh](example_config.sh).
 
+## Documentation
+
+For detailed API documentation and developer guides, see the [docs](docs/) directory:
+- **[API Documentation](docs/API.md)** - Comprehensive API reference for developers
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Solutions to common issues
+- **[Documentation Index](docs/README.md)** - Overview of all documentation
+
 ## WSI Inference
 
 This pipeline uses OpenSlide to read images, and therefore supports all formats which are supported by OpenSlide. 
