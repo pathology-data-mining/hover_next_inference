@@ -1,34 +1,3 @@
-"""
-Color augmentation module for histopathology images.
-
-This module provides color space transformations and augmentations specifically
-designed for H&E stained histopathology images. It includes HED (Hematoxylin-Eosin-DAB)
-color space transformations and various augmentation techniques.
-
-Key Features
-------------
-- RGB to HED color space conversion and vice versa
-- Stain augmentation for robustness to staining variations
-- Color jitter and Gaussian noise augmentation
-- GPU-accelerated transformations using PyTorch
-
-Classes
--------
-Rgb2Hed : torch.nn.Module
-    Converts RGB images to HED color space
-Hed2Rgb : torch.nn.Module
-    Converts HED images back to RGB color space
-HedNormalizeTorch : torch.nn.Module
-    Applies stain augmentation in HED space
-GaussianNoise : torch.nn.Module
-    Adds Gaussian noise to images
-
-Functions
----------
-color_augmentations : Creates a sequential augmentation pipeline
-torch_rgb2hed : Low-level RGB to HED conversion
-torch_hed2rgb : Low-level HED to RGB conversion
-"""
 import torch
 import numpy as np
 from torchvision.transforms.transforms import ColorJitter, RandomApply, GaussianBlur

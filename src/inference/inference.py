@@ -116,10 +116,8 @@ def inference_main(
             ratio_object_thresh=0.0001,
         )
 
-    # setup output files to write to, also create dummy file to resume inference if interrupted
+    # setup output files to write to, also create dummy file to resume inference if interruped
 
-    # Create zarr compressed arrays for storing raw predictions
-    # Instance predictions: HoVer maps (horizontal/vertical gradients + foreground)
     z_inst = zarr.open(
         params["model_out_p"] + "_inst.zip",
         mode="w",
@@ -128,7 +126,6 @@ def inference_main(
         dtype="f4",
         compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.SHUFFLE),
     )
-    # Class predictions: cell type probabilities
     z_cls = zarr.open(
         params["model_out_p"] + "_cls.zip",
         mode="w",
@@ -147,8 +144,7 @@ def inference_main(
         dtype="u1",
         compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.BITSHUFFLE),
     )
-    
-    # Create progress file to enable resuming interrupted inference runs
+    # creating progress file to restart inference if it was interrupted
     with open(prog_path, "w") as f:
         f.write("0")
     inf_start = 0
@@ -161,43 +157,30 @@ def inference_main(
         pin_memory=True,
     )
 
-    # IO thread function to write results in parallel with inference
-    # This overlaps disk I/O with GPU computation for better performance
+    # IO thread to write output in parallel to inference
     def dump_results(res, z_cls, z_inst, prog_path):
-        """
-        Write batch results to zarr arrays in a separate thread.
-        
-        Converts class predictions to uint8 via softmax and writes both
-        instance and class predictions to compressed zarr stores.
-        """
         cls_, inst_, zc_ = res
         if cls_ is None:
             return
-        # Convert class logits to probabilities and quantize to uint8 for compression
         cls_ = (softmax(cls_.astype(np.float32), axis=1) * 255).astype(np.uint8)
         z_cls[zc_ : zc_ + cls_.shape[0]] = cls_
         z_inst[zc_ : zc_ + inst_.shape[0]] = inst_.astype(np.float32)
-        # Update progress file for resumption capability
         with open(prog_path, "w") as f:
             f.write(str(zc_))
         return
 
-    # Separate thread pool for I/O to prevent blocking GPU inference
+    # Separate thread for IO
     with ThreadPoolExecutor(max_workers=params["inf_writers"]) as executor:
         futures = []
         # run inference
         zc = inf_start
         for raw, _ in tqdm(dataloader):
-            # Move batch to GPU
             raw = raw.to(device, non_blocking=True).float()
-            raw = raw.permute(0, 3, 1, 2)  # BHWC -> BCHW format for PyTorch
-            
+            raw = raw.permute(0, 3, 1, 2)  # BHWC -> BCHW
             with torch.inference_mode():
-                # Run inference with test-time augmentation ensemble
                 ct, inst = batch_pseudolabel_ensemb(
                     raw, models, params["tta"], augmenter, color_aug_fn
                 )
-                # Submit write operation to separate thread
                 futures.append(
                     executor.submit(
                         dump_results,
