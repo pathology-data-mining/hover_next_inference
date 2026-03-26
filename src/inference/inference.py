@@ -153,64 +153,54 @@ def inference_main(
         f.write("0")
     inf_start = 0
 
+    n_workers = params["inf_workers"]
     dataloader = DataLoader(
         dataset,
         batch_size=params["batch_size"],
         shuffle=False,
-        num_workers=params["inf_workers"],
+        num_workers=n_workers,
         pin_memory=True,
+        persistent_workers=n_workers > 0,
+        prefetch_factor=4 if n_workers > 0 else None,
     )
 
-    # IO thread function to write results in parallel with inference
-    # This overlaps disk I/O with GPU computation for better performance
-    def dump_results(res, z_cls, z_inst, prog_path):
+    # IO thread function: transfers GPU tensors to CPU and writes to zarr.
+    # Running in a background thread overlaps GPU->CPU transfer and disk I/O
+    # with the GPU compute of the next batch.
+    def dump_results(ct_gpu, inst_gpu, zc_, z_cls, z_inst, prog_path):
         """
-        Write batch results to zarr arrays in a separate thread.
-        
-        Converts class predictions to uint8 via softmax and writes both
-        instance and class predictions to compressed zarr stores.
+        Transfer predictions from GPU to CPU and write to zarr stores.
+
+        Accepts GPU tensors so the transfer happens in the background thread,
+        overlapping with the next batch's GPU computation.
         """
-        cls_, inst_, zc_ = res
-        if cls_ is None:
-            return
-        # Convert class logits to probabilities and quantize to uint8 for compression
+        cls_ = ct_gpu.cpu().numpy()
+        inst_ = inst_gpu.cpu().numpy()
         cls_ = (softmax(cls_.astype(np.float32), axis=1) * 255).astype(np.uint8)
         z_cls[zc_ : zc_ + cls_.shape[0]] = cls_
         z_inst[zc_ : zc_ + inst_.shape[0]] = inst_.astype(np.float32)
-        # Update progress file for resumption capability
         with open(prog_path, "w") as f:
             f.write(str(zc_))
-        return
 
     # Separate thread pool for I/O to prevent blocking GPU inference
     with ThreadPoolExecutor(max_workers=params["inf_writers"]) as executor:
         futures = []
-        # run inference
         zc = inf_start
         for raw, _ in tqdm(dataloader):
-            # Move batch to GPU
             raw = raw.to(device, non_blocking=True).float()
-            raw = raw.permute(0, 3, 1, 2)  # BHWC -> BCHW format for PyTorch
-            
+            raw = raw.permute(0, 3, 1, 2)  # BHWC -> BCHW
+
             with torch.inference_mode():
-                # Run inference with test-time augmentation ensemble
                 ct, inst = batch_pseudolabel_ensemb(
                     raw, models, params["tta"], augmenter, color_aug_fn
                 )
-                # Submit write operation to separate thread
+                # Pass GPU tensors directly; the thread handles CPU transfer.
+                # This lets the main thread return to GPU work immediately.
                 futures.append(
-                    executor.submit(
-                        dump_results,
-                        (ct.cpu().detach().numpy(), inst.cpu().detach().numpy(), zc),
-                        z_cls,
-                        z_inst,
-                        prog_path,
-                    )
+                    executor.submit(dump_results, ct, inst, zc, z_cls, z_inst, prog_path)
                 )
-
                 zc += params["batch_size"]
 
-        # Block until all data is written
         for _ in concurrent.futures.as_completed(futures):
             pass
     # clean up
@@ -251,35 +241,42 @@ def batch_pseudolabel_ensemb(
     inst: torch.Tensor
         Per pixel 3 class prediction map with boundary, background and foreground classes, shape (batch_size, 3, tilesize, tilesize)
     """
-    tmp_3c_view = []
-    tmp_ct_view = []
-    # ensure that at least one view is run, even when specifying 1 view with many models
-    if nviews <= 0:
-        out_fast = []
-        with torch.inference_mode():
-            for mod in models:
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    out_fast.append(mod(raw))
-        out_fast = torch.stack(out_fast, axis=0).nanmean(0)
-        ct = out_fast[:, 5:].softmax(1)
-        inst = out_fast[:, 2:5].softmax(1)
-    else:
-        for _ in range(nviews):
+    # Use running accumulation instead of building a list then stacking,
+    # which avoids holding `nviews` extra tensors in GPU memory.
+    ct_acc: torch.Tensor | None = None
+    inst_acc: torch.Tensor | None = None
+
+    n = max(1, nviews)
+    use_tta = nviews > 0
+
+    for _ in range(n):
+        if use_tta:
             aug.interpolation = "bilinear"
-            view_aug = aug.forward_transform(raw)
+            view = aug.forward_transform(raw)
             aug.interpolation = "nearest"
-            view_aug = torch.clamp(color_aug_fn(view_aug), 0, 1)
-            out_fast = []
-            with torch.inference_mode():
-                for mod in models:
-                    with torch.autocast(device_type="cuda", dtype=torch.float16):
-                        out_fast.append(aug.inverse_transform(mod(view_aug)))
-            out_fast = torch.stack(out_fast, axis=0).nanmean(0)
-            tmp_3c_view.append(out_fast[:, 2:5].softmax(1))
-            tmp_ct_view.append(out_fast[:, 5:].softmax(1))
-        ct = torch.stack(tmp_ct_view).nanmean(0)
-        inst = torch.stack(tmp_3c_view).nanmean(0)
-    return ct, inst
+            view = torch.clamp(color_aug_fn(view), 0, 1)
+        else:
+            view = raw
+
+        out_fast = []
+        for mod in models:
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                pred = mod(view)
+            if use_tta:
+                pred = aug.inverse_transform(pred)
+            out_fast.append(pred)
+
+        out = torch.stack(out_fast).nanmean(0)
+        view_inst = out[:, 2:5].softmax(1)
+        view_ct = out[:, 5:].softmax(1)
+
+        if ct_acc is None:
+            ct_acc, inst_acc = view_ct, view_inst
+        else:
+            ct_acc = ct_acc + view_ct
+            inst_acc = inst_acc + view_inst
+
+    return ct_acc / n, inst_acc / n
 
 
 def get_inference_setup(params):
@@ -329,6 +326,12 @@ def get_inference_setup(params):
         ).to(device)
         model = load_checkpoint(model, checkpoint_path, device)
         model.eval()
+        try:
+            # torch.compile reduces kernel launch overhead via CUDA graphs.
+            # mode="reduce-overhead" is optimal for repeated same-shape inference.
+            model = torch.compile(model, mode="reduce-overhead")
+        except Exception:
+            pass  # Graceful fallback for environments without compiler support
         models.append(copy.deepcopy(model))
 
     if len(set(pannuke_flags)) > 1:
