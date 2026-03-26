@@ -9,6 +9,7 @@ from inference.viz_utils import create_tsvs, create_polygon_output
 from inference.data_utils import NpyDataset, ImageDataset
 from typing import List, Tuple
 import zarr
+import numpy as np
 from numcodecs import Blosc
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
@@ -60,6 +61,7 @@ def post_process_main(
                 params["out_img_shape"][-2],
             ),
             dtype="i4",
+            zarr_format=2,
             compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.SHUFFLE),
         )
 
@@ -67,6 +69,7 @@ def post_process_main(
         pinst_out = zarr.zeros(
             shape=(params["orig_shape"][0], *params["orig_shape"][-2:]),
             dtype="i4",
+            zarr_format=2,
             compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.SHUFFLE),
         )
 
@@ -88,7 +91,7 @@ def post_process_main(
 
     if params["output_dir"] is not None:
         print("saving final output")
-        zarr.save(os.path.join(params["output_dir"], "pinst_pp.zip"), pinst_out)
+        zarr.save(zarr.storage.ZipStore(os.path.join(params["output_dir"], "pinst_pp.zip"), mode='w'), np.array(pinst_out), zarr_format=2)
         print("storing class dictionary...")
         with open(os.path.join(params["output_dir"], "class_inst.json"), "w") as fp:
             json.dump(pcls_out, fp)

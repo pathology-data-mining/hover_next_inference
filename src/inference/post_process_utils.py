@@ -303,7 +303,9 @@ def work(tcrd, ds_coord, z, params):
     max_hole_size = MAX_HOLE_SIZE if params["pannuke"] else (MAX_HOLE_SIZE // 4)
     if skip:
         pred_inst = zarr.array(
-            pred_inst, compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.SHUFFLE)
+            pred_inst,
+            zarr_format=2,
+            store=None,
         )
 
         return (pred_inst, {}, 0, tcrd, skip)
@@ -321,7 +323,8 @@ def work(tcrd, ds_coord, z, params):
     max_inst = np.max(pred_inst)
     pred_inst = zarr.array(
         pred_inst.astype(np.int32),
-        compressor=Blosc(cname="zstd", clevel=3, shuffle=Blosc.SHUFFLE),
+        zarr_format=2,
+        store=None,
     )
     return (pred_inst, pred_ct, max_inst, tcrd, skip)
 
@@ -441,7 +444,7 @@ def gen_tile_map(
     npy=False,
 ):
     if z is None:
-        z = zarr.open(model_out_p + f"{which}.zip", mode="r")
+        z = zarr.open(zarr.storage.ZipStore(model_out_p + f"{which}.zip", mode="r"))
     else:
         if which == "_cls":
             z = z[1]
@@ -513,7 +516,7 @@ def faster_instance_seg(out_img, out_cls, best_fg_thresh_cl, best_seed_thresh_cl
     labelling = zarr.zeros(
         out_cls.shape[1:],
         dtype=np.int32,
-        compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.BITSHUFFLE),
+        zarr_format=2,
     )
     if len(bboxes) == 0:
         skip = True

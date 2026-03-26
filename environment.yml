@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11.5
+  - python=3.12
   - openslide
   - zarr=2.16.1
   - pip
