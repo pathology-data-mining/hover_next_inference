@@ -299,7 +299,6 @@ def work(tcrd, ds_coord, z, params):
         out_img, out_cls, params["best_fg_thresh_cl"], params["best_seed_thresh_cl"]
     )
     del out_img
-    gc.collect()
     max_hole_size = MAX_HOLE_SIZE if params["pannuke"] else (MAX_HOLE_SIZE // 4)
     if skip:
         pred_inst = zarr.array(
@@ -315,7 +314,6 @@ def work(tcrd, ds_coord, z, params):
     )
     pred_ct = make_ct(out_cls, pred_inst)
     del out_cls
-    gc.collect()
 
     processed = remove_obj_cls(pred_inst, pred_ct, best_min_threshs, best_max_threshs)
     # TODO why is this here?
@@ -497,13 +495,11 @@ def gen_tile_map(
                 p_shift[1] : ccrop + n_shift[1],
             ]
 
-        except:
-            print(zero_map.shape)
-            print(tx)
-            print(ty)
-            print(ccrop)
-            print(tile.shape)
-            raise ValueError
+        except (IndexError, ValueError) as e:
+            raise ValueError(
+                f"Tile placement error: zero_map={zero_map.shape}, "
+                f"tx={tx}, ty={ty}, ccrop={ccrop}, tile={tile.shape}"
+            ) from e
     return zero_map
 
 
@@ -511,7 +507,6 @@ def faster_instance_seg(out_img, out_cls, best_fg_thresh_cl, best_seed_thresh_cl
     _, rois = cv2.connectedComponents((out_img[0] > 0).astype(np.uint8), connectivity=8)
     bboxes = find_objects(rois)
     del rois
-    gc.collect()
     skip = False
     labelling = zarr.zeros(
         out_cls.shape[1:],
@@ -526,8 +521,8 @@ def faster_instance_seg(out_img, out_cls, best_fg_thresh_cl, best_seed_thresh_cl
         bg_pred = out_img[(slice(0, 1, None), *bb)].squeeze()
         if (
             (np.array(bg_pred.shape[-2:]) <= 2).any()
-            | (np.array(bg_pred.shape).sum() <= 64)
-            | (len(bg_pred.shape) < 2)
+            or np.array(bg_pred.shape).sum() <= 64
+            or len(bg_pred.shape) < 2
         ):
             continue
         fg_pred = out_img[(slice(1, 2, None), *bb)].squeeze()
@@ -542,13 +537,10 @@ def faster_instance_seg(out_img, out_cls, best_fg_thresh_cl, best_seed_thresh_cl
             seeds[mask] |= fg_pred[mask] > best_seed_thresh_cl[cl]
 
         del fg_pred, bg_pred, sem, mask
-        gc.collect()
         _, markers = cv2.connectedComponents((seeds).astype(np.uint8), connectivity=8)
         del seeds
-        gc.collect()
         bb_ws = watershed(ws_surface, markers, mask=fg, connectivity=2)
         del ws_surface, markers, fg
-        gc.collect()
         bb_ws[bb_ws != 0] += max_inst
         labelling[bb] = bb_ws
         max_inst = np.max(bb_ws)
@@ -671,7 +663,7 @@ def remove_obj_cls(pred_inst, pred_cls_dict, best_min_threshs, best_max_threshs)
         i += 1
         px = np.sum([pred_inst[sl] == i])
         cls_ = pred_cls_dict[str(i)]
-        if (px > best_min_threshs[cls_ - 1]) & (px < best_max_threshs[cls_ - 1]):
+        if best_min_threshs[cls_ - 1] < px < best_max_threshs[cls_ - 1]:
             out_oc.append((i_, cls_))
             out_oi[sl][pred_inst[sl] == i] = i_
             i_ += 1
@@ -823,8 +815,8 @@ def get_openslide_info(sl: openslide.OpenSlide):
             properties = xmltodict.parse(sl.properties['openslide.comment'])
             mpp_x = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeX'])
             mpp_y = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeY'])
-        except: 
-            print("'No resolution found in WSI metadata, using default .2425")
+        except (KeyError, TypeError, ValueError):
+            print("No resolution found in WSI metadata, using default 0.2425 mpp")
             mpp_x = 0.2425
             mpp_y = 0.2425
     try:

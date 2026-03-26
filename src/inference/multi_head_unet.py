@@ -87,8 +87,8 @@ def load_checkpoint(model, cp_path, device):
     try:
         model.load_state_dict(cp["model_state_dict"])
 
-        print("succesfully loaded model weights")
-    except:
+        print("successfully loaded model weights")
+    except (RuntimeError, KeyError):
         print("trying secondary checkpoint loading")
         state_dict = cp["model_state_dict"]
         new_state_dict = OrderedDict()
@@ -97,7 +97,7 @@ def load_checkpoint(model, cp_path, device):
             new_state_dict[name] = v
 
         model.load_state_dict(new_state_dict)
-        print("succesfully loaded model weights")
+        print("successfully loaded model weights")
     return model
 
 
@@ -433,7 +433,7 @@ class MultiHeadModel(torch.nn.Module):
             )
 
     def forward(self, x):
-        """Sequentially pass `x` trough model`s encoder, decoder and heads"""
+        """Sequentially pass `x` through model's encoder, decoder and heads"""
 
         # self.check_input_shape(x)
 

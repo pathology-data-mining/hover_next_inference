@@ -5,9 +5,8 @@ from inference.post_process_utils import (
     get_shapes,
     get_tile_coords,
 )
-from inference.viz_utils import create_tsvs, create_polygon_output
-from inference.data_utils import NpyDataset, ImageDataset
-from typing import List, Tuple
+from inference.viz_utils import create_tsvs, create_polygon_output, create_geojson
+from typing import Tuple, Union
 import zarr
 import numpy as np
 from numcodecs import Blosc
@@ -15,9 +14,7 @@ from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
 import json
 import os
-from typing import Union
 from tqdm.auto import tqdm
-from inference.viz_utils import create_geojson
 from inference.constants import (
     CLASS_LABELS_LIZARD,
     CLASS_LABELS_PANNUKE,

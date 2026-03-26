@@ -91,7 +91,6 @@ def create_geojson(polygons, classids, lookup, params):
         if not geom.is_valid:
             print(f"Polygon {i}:{[poly]} is not valid, skipping...")
             continue
-        # poly.append(poly[0])
         measurements = {classifications: 0 for classifications in lookup.values()}
         measurements[lookup[cid]] = 1
         feature = geojson.Feature(
@@ -142,29 +141,15 @@ def create_tsvs(pcls_out, params):
 
     coord_array = np.array([[i[0], *i[1]] for i in pcls_out.values()])
     classes = list(pred_keys.keys())
-    colors = ["-256", "-65536"]
-    i = 0
     for pt in classes:
         file = os.path.join(params["output_dir"], "pred_" + pt + ".tsv")
-        textfile = open(file, "w")
-
-        textfile.write("x" + "\t" + "y" + "\t" + "name" + "\t" + "color" + "\n")
-        textfile.writelines(
-            [
-                str(element[2] * params["ds_factor"])
-                + "\t"
-                + str(element[1] * params["ds_factor"])
-                + "\t"
-                + pt
-                + "\t"
-                + colors[0]
-                + "\n"
-                for element in coord_array[coord_array[:, 0] == pred_keys[pt]]
-            ]
-        )
-
-        textfile.close()
-        i += 1
+        rows = coord_array[coord_array[:, 0] == pred_keys[pt]]
+        with open(file, "w") as textfile:
+            textfile.write("x\ty\tname\tcolor\n")
+            textfile.writelines(
+                f"{row[2] * params['ds_factor']}\t{row[1] * params['ds_factor']}\t{pt}\t-256\n"
+                for row in rows
+            )
 
 
 def cont(x, offset=None):

@@ -64,12 +64,12 @@ def inference_main(
 
     if (
         os.path.exists(params["model_out_p"] + "_inst.zip")
-        & (os.path.exists(params["model_out_p"] + "_cls.zip"))
-        & (not os.path.exists(prog_path))
+        and os.path.exists(params["model_out_p"] + "_cls.zip")
+        and not os.path.exists(prog_path)
     ):
         try:
-            z_inst = zarr.open(params["model_out_p"] + "_inst.zip", mode="r")
-            z_cls = zarr.open(params["model_out_p"] + "_cls.zip", mode="r")
+            z_inst = zarr.open(zarr.storage.ZipStore(params["model_out_p"] + "_inst.zip", mode="r"))
+            z_cls = zarr.open(zarr.storage.ZipStore(params["model_out_p"] + "_cls.zip", mode="r"))
             print("Inference already completed", z_inst.shape, z_cls.shape)
             return params, (z_inst, z_cls)
         except (KeyError, zipfile.BadZipFile):
@@ -121,17 +121,16 @@ def inference_main(
     # Create zarr compressed arrays for storing raw predictions
     # Instance predictions: HoVer maps (horizontal/vertical gradients + foreground)
     z_inst = zarr.open(
-        params["model_out_p"] + "_inst.zip",
-        mode="w",
+        zarr.storage.ZipStore(params["model_out_p"] + "_inst.zip", mode="w"),
         shape=(len(dataset), 3, params["tile_size"], params["tile_size"]),
         chunks=(params["batch_size"], 3, params["tile_size"], params["tile_size"]),
+        zarr_format=2,
         dtype="f4",
         compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.SHUFFLE),
     )
     # Class predictions: cell type probabilities
     z_cls = zarr.open(
-        params["model_out_p"] + "_cls.zip",
-        mode="w",
+        zarr.storage.ZipStore(params["model_out_p"] + "_cls.zip", mode="w"),
         shape=(
             len(dataset),
             params["out_channels_cls"],
@@ -144,6 +143,7 @@ def inference_main(
             params["tile_size"],
             params["tile_size"],
         ),
+        zarr_format=2,
         dtype="u1",
         compressor=Blosc(cname="lz4", clevel=3, shuffle=Blosc.BITSHUFFLE),
     )
@@ -284,17 +284,44 @@ def batch_pseudolabel_ensemb(
 
 def get_inference_setup(params):
     """
-    get model/ models and load checkpoint, create augmentation functions and set up parameters for inference
+    Load model checkpoints, create augmentation functions, and configure inference parameters.
+
+    Parameters
+    ----------
+    params : dict
+        Parameter dictionary. Must contain 'data_dirs' (list of checkpoint paths).
+        Modified in-place to add 'out_channels_cls', 'inst_channels', 'pannuke'.
+
+    Returns
+    -------
+    params : dict
+        Updated parameter dictionary
+    models : list of torch.nn.Module
+        Loaded and ready-to-use model instances
+    augmenter : SpatialAugmenter
+        Geometric TTA augmentation module on device
+    color_aug_fn : torch.nn.Sequential
+        Color augmentation module on device
+
+    Raises
+    ------
+    ValueError
+        If data_dirs is empty or models have conflicting dataset types
     """
+    if not params["data_dirs"]:
+        raise ValueError("No model checkpoints specified in 'data_dirs'.")
+
     models = []
+    pannuke_flags = []
     for pth in params["data_dirs"]:
         if not os.path.exists(pth):
-            pth = download_weights(os.path.split(pth)[-1])               
+            pth = download_weights(os.path.split(pth)[-1])
 
         checkpoint_path = f"{pth}/train/best_model"
         mod_params = toml.load(f"{pth}/params.toml")
         params["out_channels_cls"] = mod_params["out_channels_cls"]
         params["inst_channels"] = mod_params["inst_channels"]
+        pannuke_flags.append(mod_params["dataset"] == "pannuke")
         model = get_model(
             enc=mod_params["encoder"],
             out_channels_cls=params["out_channels_cls"],
@@ -303,30 +330,33 @@ def get_inference_setup(params):
         model = load_checkpoint(model, checkpoint_path, device)
         model.eval()
         models.append(copy.deepcopy(model))
-    # create augmentation functions on device
+
+    if len(set(pannuke_flags)) > 1:
+        raise ValueError("All model checkpoints must be trained on the same dataset (cannot mix Lizard and PanNuke models).")
+    params["pannuke"] = pannuke_flags[0]
+
     augmenter = SpatialAugmenter(TTA_AUG_PARAMS).to(device)
     color_aug_fn = color_augmentations(False, rank=device)
 
-    if mod_params["dataset"] == "pannuke":
-        params["pannuke"] = True
-    else:
-        params["pannuke"] = False
     print(
-        "processing input using",
-        "pannuke" if params["pannuke"] else "lizard",
-        "trained model",
+        "Processing input using",
+        "PanNuke" if params["pannuke"] else "Lizard",
+        f"trained model ({len(models)} checkpoint(s))",
     )
 
     return params, models, augmenter, color_aug_fn
+
 
 def download_weights(model_code):
     if model_code in VALID_WEIGHTS:
         url = f"https://zenodo.org/records/10635618/files/{model_code}.zip"
         print("downloading",model_code,"weights to",os.getcwd())
         try:
-            response = requests.get(url, stream=True, timeout=15.0)
+            response = requests.get(url, stream=True, timeout=60.0)
         except requests.exceptions.Timeout:
-            print("Timeout")
+            raise RuntimeError(f"Timed out downloading weights for '{model_code}' from {url}")
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Failed to download weights for '{model_code}': {e}")
         total_size = int(response.headers.get("content-length", 0))
         block_size = 1024  # 1 Kibibyte
         with tqdm(total=total_size, unit="iB", unit_scale=True) as t:
@@ -339,4 +369,4 @@ def download_weights(model_code):
         os.remove("cache.zip")
         return model_code
     else:
-        raise ValueError("Model id not found in valid identifiers, please make select one of", VALID_WEIGHTS)
+        raise ValueError(f"Unknown model ID '{model_code}'. Valid options: {VALID_WEIGHTS}")

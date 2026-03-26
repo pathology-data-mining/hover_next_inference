@@ -121,8 +121,8 @@ class czi_wrapper:
         self.associated_images = {}
         try:
             self._generate_dictionaries()
-        except:
-            raise RuntimeError(f"issue with {self.path}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load CZI file '{self.path}': {e}") from e
 
     @staticmethod
     def _convert_rect_to_tuple(rect):
@@ -275,15 +275,15 @@ class WholeSlideDataset(Dataset):
                 + float(self.s.properties[openslide.PROPERTY_NAME_MPP_Y])
             )
         except KeyError:
-            # additional logic to catch convered OME TIFF files
+            # additional logic to catch converted OME TIFF files
             try:
                 properties = xmltodict.parse(self.s.properties['openslide.comment'])
                 mpp_x = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeX'])
                 mpp_y = float(properties['OME']['Image'][0]['Pixels']['@PhysicalSizeY']) 
                 self.mpp = 0.5*(mpp_x + mpp_y)
 
-            except:
-                print("'No resolution found in WSI metadata, using default .2425")
+            except (KeyError, TypeError, ValueError):
+                print("No resolution found in WSI metadata, using default 0.2425 mpp")
                 self.mpp = 0.2425
             # raise IndexError('No resolution found in WSI metadata. Impossible to build pyramid.')
 
